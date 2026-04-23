@@ -1,0 +1,24 @@
+#!/bin/sh
+# Patched for AX73. TP-Link added this hook to force /etc onto a ramfs copy
+# since they had disabled the OpenWrt overlay pivot. With our fix to
+# 70_pivot_ubifs_root restoring that pivot, this hook is counterproductive:
+# it would shadow the persistent overlay /etc with a fresh-per-boot ramfs.
+#
+# Skip the ramfs init when the overlay pivot has already succeeded
+# (pi_mount_skip_next=true). If the pivot failed and we're still on squashfs,
+# fall back to the stock ramfs-/etc behavior so at least /etc is writable.
+
+RAMFS_DIRS="/etc/ /lib/wifi/ /usr/lib/lua"
+
+rootfs_init_etc_ramfs() {
+    check_skip && return 0     # overlay pivot already done; /etc is persistent
+    for dir in $RAMFS_DIRS; do
+        tmp_dir=/tmp/`basename ${dir}`_tmp
+        cp -a ${dir} ${tmp_dir}
+        mount -t ramfs -n none ${dir}
+        cp -a ${tmp_dir}/* ${dir}
+        rm -rf ${tmp_dir}
+    done
+}
+
+boot_hook_add preinit_mount_root rootfs_init_etc_ramfs

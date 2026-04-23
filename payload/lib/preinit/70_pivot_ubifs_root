@@ -1,0 +1,40 @@
+#!/bin/sh
+# Persistent /etc and /root via UBIFS bind-mount.
+#
+# We tried to do a full rootfs overlay via pivot_root + dupe, but kernel 4.1
+# doesn't have overlayfs/mini_fo and the dupe-based fallback isn't stable
+# across reboots (pivot_root on second boot produces an init panic, likely
+# from merge_overlay_hooks sourcing stale symlinks into the running shell).
+#
+# Simpler, robust approach: bind-mount only the directories that matter for
+# persistence — /etc and /root — from ubi_rootfs_data over the squashfs
+# defaults. On first boot (empty overlay) we seed each target with a copy of
+# the stock directory; on subsequent boots we just bind over.
+
+UBI_OVERLAY=/tmp/overlay
+
+rootfs_pivot_ubifs() {
+    check_skip || ubifs_not_mounted || {
+        echo "ubifs persistent bind-overlay for /etc and /root"
+
+        # First-boot seeding: copy stock /etc and /root into UBIFS if absent.
+        [ -e "$UBI_OVERLAY/etc/inittab" ] || {
+            echo "  seeding $UBI_OVERLAY/etc from /rom-equivalent /etc"
+            cp -a /etc "$UBI_OVERLAY/" 2>/dev/null
+        }
+        [ -e "$UBI_OVERLAY/root" ] || {
+            echo "  seeding $UBI_OVERLAY/root"
+            mkdir -p "$UBI_OVERLAY/root"
+            cp -a /root/. "$UBI_OVERLAY/root/" 2>/dev/null
+        }
+
+        # Bind-mount the persistent copies over the squashfs views.
+        mount --bind "$UBI_OVERLAY/etc"  /etc  && echo "  /etc  bind-mounted from UBIFS"
+        mount --bind "$UBI_OVERLAY/root" /root && echo "  /root bind-mounted from UBIFS"
+
+        # Tell the rest of preinit not to clobber us with ramfs-/etc.
+        pi_mount_skip_next=true
+    }
+}
+
+boot_hook_add preinit_mount_root rootfs_pivot_ubifs

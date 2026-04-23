@@ -4,8 +4,17 @@ Goal of this chapter: drop into `/bin/sh` running as PID 1 on the real `mtd0` ro
 
 ## 1. Open a serial console
 
+Make sure your user can read/write `/dev/ttyUSB0`. On Arch/Manjaro this means
+being in the `uucp` group; on Debian/Ubuntu it's `dialout`:
+
 ```bash
-sudo chmod a+rw /dev/ttyUSB0                 # once per boot
+sudo usermod -aG uucp "$USER"                # or dialout on Debian/Ubuntu
+# log out and back in so the new group applies to your session
+```
+
+Then:
+
+```bash
 picocom -b 115200 --logfile boot.txt /dev/ttyUSB0
 ```
 

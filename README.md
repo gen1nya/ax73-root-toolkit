@@ -86,31 +86,35 @@ cp ~/.ssh/id_ed25519.pub payload/root/.ssh/authorized_keys
 # 4. Generate a dropbear host key (optional, same caveat)
 dropbearkey -t rsa -f payload/etc/dropbear/dropbear_rsa_host_key -s 2048
 
-# 5. Solder UART, power on the router, grab a shell:
-sudo chmod a+rw /dev/ttyUSB0
+# 5. Grant yourself access to the serial device (one-time).
+#    On Arch/Manjaro the group is 'uucp'; Debian/Ubuntu use 'dialout'.
+sudo usermod -aG uucp "$USER"   # or dialout
+#    Log out and back in so the new group takes effect.
+
+# 6. Solder UART, power on the router, grab a shell:
 python3 scripts/ax73-autoroot.py
 # power-cycle when prompted; script drops you into /bin/sh on mtd0
 
-# 6. From the shell, dump mtd0 to a USB stick plugged into the router.
+# 7. From the shell, dump mtd0 to a USB stick plugged into the router.
 #    See docs/02-getting-shell.md for the exact commands.
 
-# 7. On the host, build the patched image:
+# 8. On the host, build the patched image:
 ./scripts/build-and-flash.sh <path-to-mtd0-dump.bin>
 # This unsquashfs's, applies payload/, mksquashfs's, injects, produces
 #   work/rootfs-injected.ubi.
 
-# 8. Copy work/rootfs-injected.ubi back to the USB, plug into the router,
+# 9. Copy work/rootfs-injected.ubi back to the USB, plug into the router,
 #    power-cycle, then:
 python3 scripts/ax73-autoroot-backupbank.py
 # This boots the router from mtd1 (backup bank) leaving mtd0 free.
 
-# 9. In that shell, mount the USB and flash:
-#      mount -t vfat /dev/sda1 /tmp/usb
-#      cp /tmp/usb/rootfs-injected.ubi /tmp/new.ubi
-#      /sbin/ubiformat /dev/mtd0 -f /tmp/new.ubi -s 2048 -y
-#      sync && reboot -f
+# 10. In that shell, mount the USB and flash:
+#       mount -t vfat /dev/sda1 /tmp/usb
+#       cp /tmp/usb/rootfs-injected.ubi /tmp/new.ubi
+#       /sbin/ubiformat /dev/mtd0 -f /tmp/new.ubi -s 2048 -y
+#       sync && reboot -f
 
-# 10. Router boots normal stock userspace, but:
+# 11. Router boots normal stock userspace, but:
 #       - UART: press Enter → root shell (no password)
 #       - `telnet 192.168.129.4 23` → root shell (no password)
 ```
@@ -166,10 +170,20 @@ Keep your `mtd0` dump on a USB stick somewhere **before** you start flashing. [D
 
 - ✅ UART root — persistent
 - ✅ Telnet root on port 23 — persistent
-- ✅ OpenWrt-style UBI overlay (`ubi_rootfs_data` → `/tmp/overlay`) — mounted, pivot still broken (see open questions)
-- ❌ **Dropbear hangs** after `SSH2_MSG_SERVICE_ACCEPT`, even on self-connect through `127.0.0.1`. Something in TP-Link's dropbear 2019.78 build (or its environment) stalls userauth. Not investigated in depth. See [`docs/05-dropbear-postmortem.md`](docs/05-dropbear-postmortem.md).
+- ✅ **`/etc` and `/root` bind-mounted from a writable UBIFS volume** —
+  you can edit files there and changes survive reboot. No full rootfs
+  overlay (see below), but enough for 99% of persistent-config needs.
+- ❌ **Full rootfs overlay via pivot_root** — not working. Kernel 4.1 on
+  BCM6750 lacks overlayfs and mini_fo; the dupe-based fallback panics on
+  the second boot. Our `70_pivot_ubifs_root` therefore does targeted
+  bind-mounts instead of a full pivot.
+- ❌ **Dropbear hangs** after `SSH2_MSG_SERVICE_ACCEPT`, even on
+  self-connect through `127.0.0.1`. Something in TP-Link's dropbear 2019.78
+  build stalls userauth. Not blocking (telnet works) but unsolved.
+  See [`docs/05-dropbear-postmortem.md`](docs/05-dropbear-postmortem.md).
 
-PRs or issues with dropbear debugging very welcome.
+PRs or issues with dropbear debugging or a working full-overlay approach
+very welcome.
 
 ---
 
