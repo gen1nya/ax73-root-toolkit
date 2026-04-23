@@ -1,0 +1,31 @@
+#!/bin/sh
+# Copyright (C) 2006-2010 OpenWrt.org
+# Copyright (C) 2010 Vertical Communications
+#
+# Restores the original OpenWrt check that TP-Link commented out in their
+# stock firmware. Without this fix, check_for_jffs2 unconditionally drops
+# the system onto a RAM overlay, which makes every subsequent
+# do_mount_ubifs / rootfs_pivot_ubifs hook a no-op — effectively disabling
+# the entire OpenWrt overlay mechanism.
+#
+# With this patch in place, if you create a UBI volume named "ubi_rootfs_data"
+# inside ubi0 (mtd0), the overlay chain attaches it to /overlay and fopivots
+# it over squashfs on every boot. You can then edit /etc/* at runtime and
+# changes persist.
+
+mount_no_jffs2() {
+    echo "jffs2 not ready yet; using ramdisk"
+    ramoverlay
+}
+
+check_for_jffs2() {
+    # skip jffs2 mounting even if it's there if we have volume named
+    # ubi_rootfs_data
+    check_skip || grep -qs ubi_rootfs_data /sys/class/ubi/ubi0/ubi0_*/name || {
+	jffs2_ready || {
+	    mount_no_jffs2 && pi_mount_skip_next=true
+	}
+    }
+}
+
+boot_hook_add preinit_mount_root check_for_jffs2

@@ -1,0 +1,28 @@
+# firmware dumps — never commit (exposes MAC, device ID, keys)
+*.bin
+*.ubi
+*.ubifs
+*.squashfs
+
+# working directories
+work/
+rootfs-extracted/
+rootfs-patched/
+dumps/
+
+# user-specific
+payload/root/.ssh/authorized_keys
+payload/etc/dropbear/dropbear_rsa_host_key
+payload/etc/dropbear/dropbear_rsa_host_key.pub
+
+# captures & logs
+*.log
+*-bootlog*.txt
+
+# python
+__pycache__/
+*.pyc
+
+# editor
+*.swp
+.DS_Store
