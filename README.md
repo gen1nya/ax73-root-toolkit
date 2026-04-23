@@ -173,14 +173,16 @@ Keep your `mtd0` dump on a USB stick somewhere **before** you start flashing. [D
 - ✅ **`/etc` and `/root` bind-mounted from a writable UBIFS volume** —
   you can edit files there and changes survive reboot. No full rootfs
   overlay (see below), but enough for 99% of persistent-config needs.
+- ✅ **SSH (Alpine dropbear) on port 2222 with pubkey auth**, persistent
+  via `::respawn:` in inittab. See [`docs/06-dropbear-setup.md`](docs/06-dropbear-setup.md).
 - ❌ **Full rootfs overlay via pivot_root** — not working. Kernel 4.1 on
   BCM6750 lacks overlayfs and mini_fo; the dupe-based fallback panics on
   the second boot. Our `70_pivot_ubifs_root` therefore does targeted
   bind-mounts instead of a full pivot.
-- ❌ **Dropbear hangs** after `SSH2_MSG_SERVICE_ACCEPT`, even on
-  self-connect through `127.0.0.1`. Something in TP-Link's dropbear 2019.78
-  build stalls userauth. Not blocking (telnet works) but unsolved.
-  See [`docs/05-dropbear-postmortem.md`](docs/05-dropbear-postmortem.md).
+- ❌ **TP-Link's stock dropbear** still hangs after `SSH2_MSG_SERVICE_ACCEPT`
+  even on self-connect. A fresh Alpine build of the same dropbear works
+  fine, so the stock binary is the culprit. See
+  [`docs/05-dropbear-postmortem.md`](docs/05-dropbear-postmortem.md).
 
 PRs or issues with dropbear debugging or a working full-overlay approach
 very welcome.

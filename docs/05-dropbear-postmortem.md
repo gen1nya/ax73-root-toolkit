@@ -59,10 +59,40 @@ The cleanest next step would be `strace` on a child — but busybox here doesn't
 
 `telnetd -F -l /bin/ash -p 23`, spawned by init via `::respawn:` in the patched inittab. Works first try, survives reboot, gives unrestricted root. Adequate for a home AP behind NAT.
 
-If you do need SSH:
+## Update: a fresh dropbear build actually works
 
-- Cross-compile a current dropbear for `armv7l` and drop the binary into `payload/usr/sbin/dropbear` in this repo. The patched squashfs will ship your build. Replace the stock init script too or invoke your binary from inittab.
-- Or: reverse-engineer the stock dropbear binary. Ghidra + bdiff against the upstream 2019.78 source should reveal whichever code path is blocking. If you do, open an issue / PR; we'd love to know.
+After the bind-mount overlay started working, we tested whether it's specifically the **TP-Link-compiled** dropbear that hangs, or something about the environment (PAM, NSS, /dev/pts, …). Grabbed Alpine's `dropbear-2024.85-r0.apk` for `armhf`, bundled it with `ld-musl-armhf.so.1`, dropped into `/root/bin/` (writable via our bind-mount), and:
+
+```sh
+/root/bin/ld-musl-armhf.so.1 /root/bin/dropbear -F -E -p 2222 \
+    -r /root/dropbear-keys/ed25519 -r /root/dropbear-keys/rsa
+```
+
+Pubkey auth works on the first try. So **the issue is the TP-Link build, not the kernel or userspace environment.** Our Alpine build is dynamically linked against musl, but drops in just fine alongside glibc because it's invoked via the musl loader explicitly.
+
+Bundle in use (≈1 MB on UBIFS):
+
+| file | size | source |
+|---|---|---|
+| `dropbear` | 231 KB | `alpine/v3.20/main/armhf/dropbear-2024.85-r0.apk` |
+| `dropbearkey` | 136 KB | same |
+| `ld-musl-armhf.so.1` | 645 KB | `alpine/v3.20/main/armhf/musl-1.2.5-r3.apk` |
+
+We persist it via a `::respawn:` line in `/etc/inittab` (which lives on UBIFS now):
+
+```
+::respawn:/root/bin/ld-musl-armhf.so.1 /root/bin/dropbear -F -E -p 2222 -r /root/dropbear-keys/ed25519 -r /root/dropbear-keys/rsa
+```
+
+`-F` (foreground) is required or `::respawn:` fork-bombs the daemon.
+
+## What we still don't know
+
+Why TP-Link's stock dropbear hangs post-`SSH2_MSG_SERVICE_ACCEPT`. Candidate culprits (not investigated):
+- An extra `fd 7` pipe in the stock binary's child process — suggests a custom authhelper fork that never receives its RPC.
+- Possibly a compiled-in dependency on a TP-Link daemon (`ceventd`, `cfm`-equivalent) that doesn't exist in AP-mode.
+
+If you have time with a reverse-engineering toolkit, the stock binary is at `/usr/sbin/dropbear` (md5 `103c9ad09a7f25aff42f555efad17da7` for firmware 1.3.5 Build 20230919). Diff against Dropbear 2019.78 upstream + figure out what's holding. PR welcome.
 
 ## A cheap workaround
 
